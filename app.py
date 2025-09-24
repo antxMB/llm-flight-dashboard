@@ -4,15 +4,15 @@ import pandas as pd
 import snowflake.connector
 import openai
 
-# --- UI: Page Config ---
+# --- Page Configuration ---
 st.set_page_config(page_title="LLM Flight Dashboard", layout="wide")
-st.title("Flight Data Chat Dashboard")
-
-# --- Prompt input from user ---
-user_query = st.text_input("Ask your question about flight data:")
+st.title("✈️ Flight Data Chat Dashboard")
 
 # --- OpenAI client setup (v1+ syntax) ---
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# --- User input for NL question ---
+user_query = st.text_input("Ask your question about flight data:")
 
 # --- Snowflake connection using Streamlit secrets ---
 @st.cache_resource
@@ -28,12 +28,12 @@ def connect_to_snowflake():
 
 conn = connect_to_snowflake()
 
-# --- Function: Translate user query into SQL using OpenAI ---
+# --- Translate NL prompt to SQL ---
 def translate_to_sql(prompt):
     system_prompt = (
-        "You are an expert SQL generator for Snowflake. "
-        "Translate natural language questions into valid, optimized SQL queries "
-        "based on a flight pricing dataset. Only return the SQL query."
+        "You are an expert SQL assistant. "
+        "Translate the user's natural language question into a valid Snowflake SQL query. "
+        "ONLY return the SQL query without any Markdown formatting (no ```sql or explanations)."
     )
     
     response = client.chat.completions.create(
@@ -44,27 +44,35 @@ def translate_to_sql(prompt):
         ]
     )
 
-    return response.choices[0].message.content.strip()
+    sql = response.choices[0].message.content.strip()
 
-# --- Function: Run SQL and return DataFrame ---
+    # 🔥 Remove any triple backticks if the model adds them anyway
+    sql = sql.replace("```sql", "").replace("```", "").strip()
+
+    return sql
+
+# --- Execute the SQL query ---
 def run_query(sql):
     try:
         df = pd.read_sql(sql, conn)
         return df
     except Exception as e:
-        st.error(f"Error running query: {e}")
+        st.error(f"Error running query:\n\n{e}")
         return None
 
-# --- Main app logic ---
+# --- Main Logic ---
 if user_query:
-    st.markdown("### Generated SQL")
-    generated_sql = translate_to_sql(user_query)
+    with st.spinner("Generating SQL..."):
+        generated_sql = translate_to_sql(user_query)
+
+    st.markdown("### 🧠 Generated SQL")
     st.code(generated_sql, language="sql")
 
-    st.markdown("### Query Results")
-    result_df = run_query(generated_sql)
+    with st.spinner("Running query..."):
+        result_df = run_query(generated_sql)
 
     if result_df is not None and not result_df.empty:
-        st.dataframe(result_df)
+        st.markdown("### 📊 Query Results")
+        st.dataframe(result_df, use_container_width=True)
     else:
-        st.warning("No results returned or an error occurred.")
+        st.warning("No results found or there was an error in the SQL.")
