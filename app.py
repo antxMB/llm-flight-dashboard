@@ -1,48 +1,70 @@
 import streamlit as st
-import openai
 import os
-from dotenv import load_dotenv
 import pandas as pd
 import snowflake.connector
+import openai
 
-load_dotenv()
+# --- UI: Page Config ---
+st.set_page_config(page_title="LLM Flight Dashboard", layout="wide")
+st.title("Flight Data Chat Dashboard")
 
-# Secrets from environment variables
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Streamlit UI
-st.title("✈️ Flight Pricing LLM Dashboard")
-user_role = st.selectbox("Select your persona", ["Revenue Manager", "Operations Controller"])
+# --- Prompt input from user ---
 user_query = st.text_input("Ask your question about flight data:")
 
-# Connect to Snowflake
-conn = snowflake.connector.connect(
-    user=os.getenv("SNOWFLAKE_USER"),
-    password=os.getenv("SNOWFLAKE_PASSWORD"),
-    account=os.getenv("SNOWFLAKE_ACCOUNT"),
-    warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
-    database=os.getenv("SNOWFLAKE_DATABASE"),
-    schema=os.getenv("SNOWFLAKE_SCHEMA")
-)
+# --- OpenAI client setup (v1+ syntax) ---
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def query_snowflake(sql):
-    cur = conn.cursor()
-    cur.execute(sql)
-    return cur.fetchall(), [desc[0] for desc in cur.description]
+# --- Snowflake connection using Streamlit secrets ---
+@st.cache_resource
+def connect_to_snowflake():
+    return snowflake.connector.connect(
+        user=os.getenv("SNOWFLAKE_USER"),
+        password=os.getenv("SNOWFLAKE_PASSWORD"),
+        account=os.getenv("SNOWFLAKE_ACCOUNT"),
+        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
+        database=os.getenv("SNOWFLAKE_DATABASE"),
+        schema=os.getenv("SNOWFLAKE_SCHEMA")
+    )
 
+conn = connect_to_snowflake()
+
+# --- Function: Translate user query into SQL using OpenAI ---
+def translate_to_sql(prompt):
+    system_prompt = (
+        "You are an expert SQL generator for Snowflake. "
+        "Translate natural language questions into valid, optimized SQL queries "
+        "based on a flight pricing dataset. Only return the SQL query."
+    )
+    
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    return response.choices[0].message.content.strip()
+
+# --- Function: Run SQL and return DataFrame ---
+def run_query(sql):
+    try:
+        df = pd.read_sql(sql, conn)
+        return df
+    except Exception as e:
+        st.error(f"Error running query: {e}")
+        return None
+
+# --- Main app logic ---
 if user_query:
-    with st.spinner("Thinking..."):
-        prompt = f"You are a helpful SQL assistant for aviation data. Role: {user_role}. Write a Snowflake SQL query based on this: {user_query}"
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        sql_query = response['choices'][0]['message']['content']
-        st.code(sql_query, language='sql')
-        
-        try:
-            rows, cols = query_snowflake(sql_query)
-            df = pd.DataFrame(rows, columns=cols)
-            st.dataframe(df)
-        except Exception as e:
-            st.error(f"SQL Error: {e}")
+    st.markdown("### Generated SQL")
+    generated_sql = translate_to_sql(user_query)
+    st.code(generated_sql, language="sql")
+
+    st.markdown("### Query Results")
+    result_df = run_query(generated_sql)
+
+    if result_df is not None and not result_df.empty:
+        st.dataframe(result_df)
+    else:
+        st.warning("No results returned or an error occurred.")

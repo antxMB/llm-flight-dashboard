@@ -1,5 +1,4 @@
 streamlit
-openai
-snowflake-connector-python
-python-dotenv
 pandas
+snowflake-connector-python
+openai>=1.0.0
