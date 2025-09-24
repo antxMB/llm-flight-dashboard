@@ -11,10 +11,10 @@ st.title("✈️ Flight Data Chat Dashboard")
 # --- OpenAI client setup (v1+ syntax) ---
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --- User input for NL question ---
+# --- Get user input ---
 user_query = st.text_input("Ask your question about flight data:")
 
-# --- Snowflake connection using Streamlit secrets ---
+# --- Connect to Snowflake ---
 @st.cache_resource
 def connect_to_snowflake():
     return snowflake.connector.connect(
@@ -28,12 +28,27 @@ def connect_to_snowflake():
 
 conn = connect_to_snowflake()
 
-# --- Translate NL prompt to SQL ---
+# --- Define the schema (column names) ---
+TABLE_NAME = "FLIGHT_PRICES_RAW"  # ✅ your confirmed table name
+FULLY_QUALIFIED_TABLE = TABLE_NAME  # update this if needed to e.g. MY_DB.PUBLIC.FLIGHT_PRICES_RAW
+
+TABLE_COLUMNS = (
+    "LEGID, SEARCHDATE, FLIGHTDATE, STARTINGAIRPORT, DESTINATIONAIRPORT, FAREBASISCODE, "
+    "TRAVELDURATION, ELAPSEDDAYS, ISBASICECONOMY, ISREFUNDABLE, ISNONSTOP, BASEFARE, TOTALFARE, "
+    "SEATSREMAINING, TOTALTRAVELDISTANCE, SEGMENTSDEPARTURETIMEEPOCHSECONDS, "
+    "SEGMENTSDEPARTURETIMERAW, SEGMENTSARRIVALTIMEEPOCHSECONDS, SEGMENTSARRIVALTIMERAW, "
+    "SEGMENTSARRIVALAIRPORTCODE, SEGMENTSDEPARTUREAIRPORTCODE, SEGMENTSAIRLINENAME, "
+    "SEGMENTSAIRLINECODE, SEGMENTSEQUIPMENTDESCRIPTION, SEGMENTSDURATIONINSECONDS, "
+    "SEGMENTSDISTANCE, SEGMENTSCABINCODE, INGESTED_AT"
+)
+
+# --- Translate natural language to SQL ---
 def translate_to_sql(prompt):
     system_prompt = (
-        "You are an expert SQL assistant. "
-        "Translate the user's natural language question into a valid Snowflake SQL query. "
-        "ONLY return the SQL query without any Markdown formatting (no ```sql or explanations)."
+        f"You are an expert SQL assistant working with Snowflake. "
+        f"The table is `{FULLY_QUALIFIED_TABLE}` and contains the following columns:\n{TABLE_COLUMNS}.\n"
+        f"Generate a valid SQL query based only on this table. "
+        f"Only return the SQL query with NO explanation and NO markdown (no triple backticks)."
     )
     
     response = client.chat.completions.create(
@@ -45,13 +60,14 @@ def translate_to_sql(prompt):
     )
 
     sql = response.choices[0].message.content.strip()
-
-    # 🔥 Remove any triple backticks if the model adds them anyway
     sql = sql.replace("```sql", "").replace("```", "").strip()
+    
+    # Optional: enforce correct table name if LLM gets creative
+    sql = sql.replace("FLIGHTS", FULLY_QUALIFIED_TABLE).replace("Flights", FULLY_QUALIFIED_TABLE)
 
     return sql
 
-# --- Execute the SQL query ---
+# --- Run SQL Query ---
 def run_query(sql):
     try:
         df = pd.read_sql(sql, conn)
@@ -60,7 +76,7 @@ def run_query(sql):
         st.error(f"Error running query:\n\n{e}")
         return None
 
-# --- Main Logic ---
+# --- Main App Logic ---
 if user_query:
     with st.spinner("Generating SQL..."):
         generated_sql = translate_to_sql(user_query)
