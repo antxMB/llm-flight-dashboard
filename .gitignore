@@ -1,0 +1,15 @@
+# Streamlit & Python
+__pycache__/
+*.pyc
+
+# Env files
+.env
+
+# Jupyter and data files (if relevant)
+*.ipynb
+*.csv
+*.sqlite3
+.DS_Store
+
+# Streamlit Cloud specific (if used)
+.streamlit/
