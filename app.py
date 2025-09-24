@@ -28,42 +28,59 @@ def connect_to_snowflake():
 
 conn = connect_to_snowflake()
 
-# --- Define the schema (column names) ---
-TABLE_NAME = "FLIGHT_PRICES_RAW"  # ✅ your confirmed table name
-FULLY_QUALIFIED_TABLE = TABLE_NAME  # update this if needed to e.g. MY_DB.PUBLIC.FLIGHT_PRICES_RAW
+# --- Define table name ---
+TABLE_NAME = "FLIGHT_PRICES_RAW"
+FULLY_QUALIFIED_TABLE = TABLE_NAME  # Adjust if using schema.db.table
 
-TABLE_COLUMNS = (
-    "LEGID, SEARCHDATE, FLIGHTDATE, STARTINGAIRPORT, DESTINATIONAIRPORT, FAREBASISCODE, "
-    "TRAVELDURATION, ELAPSEDDAYS, ISBASICECONOMY, ISREFUNDABLE, ISNONSTOP, BASEFARE, TOTALFARE, "
-    "SEATSREMAINING, TOTALTRAVELDISTANCE, SEGMENTSDEPARTURETIMEEPOCHSECONDS, "
-    "SEGMENTSDEPARTURETIMERAW, SEGMENTSARRIVALTIMEEPOCHSECONDS, SEGMENTSARRIVALTIMERAW, "
-    "SEGMENTSARRIVALAIRPORTCODE, SEGMENTSDEPARTUREAIRPORTCODE, SEGMENTSAIRLINENAME, "
-    "SEGMENTSAIRLINECODE, SEGMENTSEQUIPMENTDESCRIPTION, SEGMENTSDURATIONINSECONDS, "
-    "SEGMENTSDISTANCE, SEGMENTSCABINCODE, INGESTED_AT"
-)
-
-# --- Translate natural language to SQL ---
+# --- Translate NL prompt to SQL with fallback ---
 def translate_to_sql(prompt):
     system_prompt = (
-        f"You are an expert SQL assistant working with Snowflake. "
-        f"The table is `{FULLY_QUALIFIED_TABLE}` and contains the following columns:\n{TABLE_COLUMNS}.\n"
-        f"Generate a valid SQL query based only on this table. "
-        f"Only return the SQL query with NO explanation and NO markdown (no triple backticks)."
+        "You are a Snowflake SQL expert. "
+        f"Translate the user's question into a valid SQL query using only the table `{FULLY_QUALIFIED_TABLE}`.\n\n"
+        "The table contains flight pricing and segment-level information with the following columns:\n"
+        "LEGID, SEARCHDATE, FLIGHTDATE, STARTINGAIRPORT, DESTINATIONAIRPORT, FAREBASISCODE, "
+        "TRAVELDURATION, ELAPSEDDAYS, ISBASICECONOMY, ISREFUNDABLE, ISNONSTOP, BASEFARE, TOTALFARE, "
+        "SEATSREMAINING, TOTALTRAVELDISTANCE, SEGMENTSDEPARTURETIMEEPOCHSECONDS, "
+        "SEGMENTSDEPARTURETIMERAW, SEGMENTSARRIVALTIMEEPOCHSECONDS, SEGMENTSARRIVALTIMERAW, "
+        "SEGMENTSARRIVALAIRPORTCODE, SEGMENTSDEPARTUREAIRPORTCODE, SEGMENTSAIRLINENAME, "
+        "SEGMENTSAIRLINECODE, SEGMENTSEQUIPMENTDESCRIPTION, SEGMENTSDURATIONINSECONDS, "
+        "SEGMENTSDISTANCE, SEGMENTSCABINCODE, INGESTED_AT.\n\n"
+        "Notes:\n"
+        "- SEGMENTS* fields may contain multiple values separated by '||' (multi-leg flights).\n"
+        "- ELAPSEDDAYS = days between SEARCHDATE and FLIGHTDATE.\n"
+        "- BASEFARE and TOTALFARE are numeric.\n"
+        "- ISREFUNDABLE, ISNONSTOP, ISBASICECONOMY are booleans.\n"
+        "- FLIGHTDATE is a date.\n\n"
+        "Guidelines:\n"
+        "1. Use only columns from this table.\n"
+        "2. If you use aggregates in ORDER BY (e.g. COUNT, AVG), include them in SELECT.\n"
+        "3. Do not include explanations, markdown, or formatting — return valid SQL only."
     )
-    
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ]
-    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages
+        )
+        model_used = "gpt-3.5-turbo"
+    except Exception as e:
+        st.warning(f"gpt-3.5-turbo failed, switching to gpt-4o: {e}")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages
+        )
+        model_used = "gpt-4o"
 
     sql = response.choices[0].message.content.strip()
     sql = sql.replace("```sql", "").replace("```", "").strip()
-    
-    # Optional: enforce correct table name if LLM gets creative
     sql = sql.replace("FLIGHTS", FULLY_QUALIFIED_TABLE).replace("Flights", FULLY_QUALIFIED_TABLE)
+
+    st.caption(f"🧠 Generated using: `{model_used}`")
 
     return sql
 
@@ -90,5 +107,9 @@ if user_query:
     if result_df is not None and not result_df.empty:
         st.markdown("### 📊 Query Results")
         st.dataframe(result_df, use_container_width=True)
+
+        # Optional: bar chart if grouped result with count/total
+        if "flight_count" in result_df.columns:
+            st.bar_chart(result_df.set_index(result_df.columns[0])["flight_count"])
     else:
         st.warning("No results found or there was an error in the SQL.")
