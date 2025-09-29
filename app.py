@@ -85,7 +85,11 @@ def translate_to_sql(prompt):
     return sql
 
 # --- Run SQL Query ---
+# ...existing code...
+
+# --- Run SQL Query ---
 def run_query(sql):
+    global conn  # Move global declaration to the top of the function
     try:
         df = pd.read_sql(sql, conn)
         return df
@@ -93,7 +97,6 @@ def run_query(sql):
         if "Authentication token has expired" in str(e):
             st.cache_resource.clear()  # Clear cached connection
             st.warning("Session expired. Reconnecting to Snowflake...")
-            global conn
             conn = connect_to_snowflake()
             try:
                 df = pd.read_sql(sql, conn)
@@ -107,6 +110,8 @@ def run_query(sql):
     except Exception as e:
         st.error(f"Error running query:\n\n{e}")
         return None
+
+# ...existing code...
 
 # --- Main App Logic ---
 if user_query:
