@@ -89,6 +89,21 @@ def run_query(sql):
     try:
         df = pd.read_sql(sql, conn)
         return df
+    except snowflake.connector.errors.ProgrammingError as e:
+        if "Authentication token has expired" in str(e):
+            st.cache_resource.clear()  # Clear cached connection
+            st.warning("Session expired. Reconnecting to Snowflake...")
+            global conn
+            conn = connect_to_snowflake()
+            try:
+                df = pd.read_sql(sql, conn)
+                return df
+            except Exception as e2:
+                st.error(f"Error running query after reconnect:\n\n{e2}")
+                return None
+        else:
+            st.error(f"Error running query:\n\n{e}")
+            return None
     except Exception as e:
         st.error(f"Error running query:\n\n{e}")
         return None
