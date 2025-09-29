@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import pandas as pd
 import snowflake.connector
+import snowflake.connector.errors
 import openai
 
 # --- Page Configuration ---
@@ -89,7 +90,7 @@ def translate_to_sql(prompt):
 
 # --- Run SQL Query ---
 def run_query(sql):
-    global conn  # Move global declaration to the top of the function
+    global conn  # Ensure this is at the top of the function
     try:
         df = pd.read_sql(sql, conn)
         return df
@@ -110,8 +111,6 @@ def run_query(sql):
     except Exception as e:
         st.error(f"Error running query:\n\n{e}")
         return None
-
-# ...existing code...
 
 # --- Main App Logic ---
 if user_query:
