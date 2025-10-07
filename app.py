@@ -4,16 +4,18 @@ import pandas as pd
 import snowflake.connector
 import snowflake.connector.errors
 import openai
+import plotly.express as px
+from dotenv import load_dotenv  # Import dotenv
+
+# --- Load environment variables ---
+load_dotenv()  # This will load variables from the .env file into the environment
 
 # --- Page Configuration ---
 st.set_page_config(page_title="LLM Flight Dashboard", layout="wide")
-st.title("✈️ Flight Data Chat Dashboard")
+st.title("Flight Data Chat Dashboard")
 
-# --- OpenAI client setup (v1+ syntax) ---
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# --- Get user input ---
-user_query = st.text_input("Ask your question about flight data:")
+# --- OpenAI client setup ---
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # --- Connect to Snowflake ---
 @st.cache_resource
@@ -132,3 +134,95 @@ if user_query:
             st.bar_chart(result_df.set_index(result_df.columns[0])["flight_count"])
     else:
         st.warning("No results found or there was an error in the SQL.")
+
+# --- Tabs for Features ---
+tab1, tab2 = st.tabs(["Revenue Insights", "Operational Metrics"])
+
+# --- Revenue Insights ---
+with tab1:
+    st.header("Revenue Insights")
+
+    # Fare Trends Over Time
+    st.subheader("Fare Trends Over Time")
+    sql = f"""
+        SELECT FLIGHTDATE, AVG(BASEFARE) AS avg_basefare, AVG(TOTALFARE) AS avg_totalfare
+        FROM {FULLY_QUALIFIED_TABLE}
+        GROUP BY FLIGHTDATE
+        ORDER BY FLIGHTDATE
+    """
+    fare_trends = run_query(sql)
+    if fare_trends is not None:
+        fig = px.line(fare_trends, x="FLIGHTDATE", y=["avg_basefare", "avg_totalfare"], title="Average Fare Trends Over Time")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Top Revenue Routes
+    st.subheader("Top Revenue Routes")
+    sql = f"""
+        SELECT STARTINGAIRPORT, DESTINATIONAIRPORT, SUM(TOTALFARE) AS total_revenue
+        FROM {FULLY_QUALIFIED_TABLE}
+        GROUP BY STARTINGAIRPORT, DESTINATIONAIRPORT
+        ORDER BY total_revenue DESC
+        LIMIT 10
+    """
+    top_routes = run_query(sql)
+    if top_routes is not None:
+        fig = px.bar(top_routes, x="total_revenue", y="STARTINGAIRPORT", color="DESTINATIONAIRPORT", orientation="h", title="Top Revenue Routes")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Airline Fare Comparison
+    st.subheader("Airline Fare Comparison")
+    sql = f"""
+        SELECT SEGMENTSAIRLINENAME, AVG(BASEFARE) AS avg_basefare, AVG(TOTALFARE) AS avg_totalfare
+        FROM {FULLY_QUALIFIED_TABLE}
+        GROUP BY SEGMENTSAIRLINENAME
+        ORDER BY avg_totalfare DESC
+    """
+    airline_fares = run_query(sql)
+    if airline_fares is not None:
+        fig = px.bar(airline_fares, x="SEGMENTSAIRLINENAME", y=["avg_basefare", "avg_totalfare"], barmode="group", title="Airline Fare Comparison")
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- Operational Metrics ---
+with tab2:
+    st.header("Operational Metrics")
+
+    # Flight Load Factor by Route
+    st.subheader("Flight Load Factor by Route")
+    sql = f"""
+        SELECT STARTINGAIRPORT, DESTINATIONAIRPORT, AVG(SEATSREMAINING) AS avg_seats_remaining
+        FROM {FULLY_QUALIFIED_TABLE}
+        GROUP BY STARTINGAIRPORT, DESTINATIONAIRPORT
+        ORDER BY avg_seats_remaining ASC
+        LIMIT 10
+    """
+    load_factors = run_query(sql)
+    if load_factors is not None:
+        fig = px.bar(load_factors, x="avg_seats_remaining", y="STARTINGAIRPORT", color="DESTINATIONAIRPORT", orientation="h", title="Flight Load Factor by Route")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # At-Risk Flights (Low Seats)
+    st.subheader("At-Risk Flights (Low Seats)")
+    sql = f"""
+        SELECT FLIGHTDATE, STARTINGAIRPORT, DESTINATIONAIRPORT, SEATSREMAINING
+        FROM {FULLY_QUALIFIED_TABLE}
+        WHERE SEATSREMAINING < 10
+        ORDER BY SEATSREMAINING ASC
+        LIMIT 20
+    """
+    at_risk_flights = run_query(sql)
+    if at_risk_flights is not None:
+        st.dataframe(at_risk_flights, use_container_width=True)
+
+    # Travel Duration by Route
+    st.subheader("Travel Duration by Route")
+    sql = f"""
+        SELECT STARTINGAIRPORT, DESTINATIONAIRPORT, AVG(TRAVELDURATION) AS avg_travel_duration
+        FROM {FULLY_QUALIFIED_TABLE}
+        GROUP BY STARTINGAIRPORT, DESTINATIONAIRPORT
+        ORDER BY avg_travel_duration DESC
+        LIMIT 10
+    """
+    travel_durations = run_query(sql)
+    if travel_durations is not None:
+        fig = px.bar(travel_durations, x="avg_travel_duration", y="STARTINGAIRPORT", color="DESTINATIONAIRPORT", orientation="h", title="Travel Duration by Route")
+        st.plotly_chart(fig, use_container_width=True)
