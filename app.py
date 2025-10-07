@@ -95,6 +95,7 @@ def run_query(sql):
     global conn
     try:
         df = pd.read_sql(sql, conn)
+        df.columns = df.columns.str.lower()  # Normalize column names to lowercase
         return df
     except snowflake.connector.errors.ProgrammingError as e:
         if "Authentication token has expired" in str(e):
@@ -103,6 +104,7 @@ def run_query(sql):
             conn = connect_to_snowflake()  # Reconnect
             try:
                 df = pd.read_sql(sql, conn)
+                df.columns = df.columns.str.lower()  # Normalize column names to lowercase
                 return df
             except Exception as e2:
                 st.error(f"Error running query after reconnect:\n\n{e2}")
@@ -153,9 +155,36 @@ with tab1:
         ORDER BY FLIGHTDATE
     """
     fare_trends = run_query(sql)
+
     if fare_trends is not None:
-        fig = px.line(fare_trends, x="FLIGHTDATE", y=["avg_basefare", "avg_totalfare"], title="Average Fare Trends Over Time")
-        st.plotly_chart(fig, use_container_width=True)
+        st.write("Fare Trends DataFrame:")
+        st.dataframe(fare_trends)  # Debugging: Display the DataFrame
+
+        # Normalize column names to lowercase
+        fare_trends.columns = fare_trends.columns.str.lower()
+
+        # Check if the expected columns exist
+        if "avg_basefare" in fare_trends.columns and "avg_totalfare" in fare_trends.columns:
+            # Ensure correct data types
+            fare_trends["flightdate"] = pd.to_datetime(fare_trends["flightdate"])
+            fare_trends["avg_basefare"] = pd.to_numeric(fare_trends["avg_basefare"], errors="coerce")
+            fare_trends["avg_totalfare"] = pd.to_numeric(fare_trends["avg_totalfare"], errors="coerce")
+
+            # Handle missing values
+            fare_trends = fare_trends.dropna()
+
+            # Plot the line chart
+            fig = px.line(
+                fare_trends,
+                x="flightdate",
+                y=["avg_basefare", "avg_totalfare"],
+                title="Average Fare Trends Over Time"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("Expected columns 'avg_basefare' and 'avg_totalfare' are missing from the query results.")
+    else:
+        st.warning("No data available for Fare Trends Over Time.")
 
     # Top Revenue Routes
     st.subheader("Top Revenue Routes")
@@ -168,7 +197,18 @@ with tab1:
     """
     top_routes = run_query(sql)
     if top_routes is not None:
-        fig = px.bar(top_routes, x="total_revenue", y="STARTINGAIRPORT", color="DESTINATIONAIRPORT", orientation="h", title="Top Revenue Routes")
+        st.write("Top Revenue Routes DataFrame:")
+        st.dataframe(top_routes)  # Debugging: Display the DataFrame
+        st.write("Column names in top_routes DataFrame:", top_routes.columns.tolist())  # Debugging: Display column names
+
+        fig = px.bar(
+            top_routes,
+            x="total_revenue",  # Use lowercase column names
+            y="startingairport",
+            color="destinationairport",
+            orientation="h",
+            title="Top Revenue Routes"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     # Airline Fare Comparison
@@ -181,7 +221,17 @@ with tab1:
     """
     airline_fares = run_query(sql)
     if airline_fares is not None:
-        fig = px.bar(airline_fares, x="SEGMENTSAIRLINENAME", y=["avg_basefare", "avg_totalfare"], barmode="group", title="Airline Fare Comparison")
+        st.write("Airline Fare Comparison DataFrame:")
+        st.dataframe(airline_fares)  # Debugging: Display the DataFrame
+        st.write("Column names in airline_fares DataFrame:", airline_fares.columns.tolist())  # Debugging: Display column names
+
+        fig = px.bar(
+            airline_fares,
+            x="segmentsairlinename",  # Use lowercase column names
+            y=["avg_basefare", "avg_totalfare"],
+            barmode="group",
+            title="Airline Fare Comparison"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 # --- Operational Metrics ---
@@ -199,7 +249,17 @@ with tab2:
     """
     load_factors = run_query(sql)
     if load_factors is not None:
-        fig = px.bar(load_factors, x="avg_seats_remaining", y="STARTINGAIRPORT", color="DESTINATIONAIRPORT", orientation="h", title="Flight Load Factor by Route")
+        st.write("Column names in load_factors DataFrame:", load_factors.columns.tolist())  # Debugging: Display column names
+        st.dataframe(load_factors)  # Debugging: Display the DataFrame
+
+        fig = px.bar(
+            load_factors,
+            x="avg_seats_remaining",  # Use lowercase column names
+            y="startingairport",
+            color="destinationairport",
+            orientation="h",
+            title="Flight Load Factor by Route"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     # At-Risk Flights (Low Seats)
@@ -218,7 +278,21 @@ with tab2:
     # Travel Duration by Route
     st.subheader("Travel Duration by Route")
     sql = f"""
-        SELECT STARTINGAIRPORT, DESTINATIONAIRPORT, AVG(TRAVELDURATION) AS avg_travel_duration
+        SELECT 
+            STARTINGAIRPORT, 
+            DESTINATIONAIRPORT, 
+            AVG(
+                CASE 
+                    WHEN TRAVELDURATION LIKE 'PT%H%M' THEN 
+                        TRY_TO_NUMBER(SUBSTR(TRAVELDURATION, 3, POSITION('H' IN TRAVELDURATION) - 3)) * 3600 + 
+                        TRY_TO_NUMBER(SUBSTR(TRAVELDURATION, POSITION('H' IN TRAVELDURATION) + 1, POSITION('M' IN TRAVELDURATION) - POSITION('H' IN TRAVELDURATION) - 1)) * 60
+                    WHEN TRAVELDURATION LIKE 'PT%H' THEN 
+                        TRY_TO_NUMBER(SUBSTR(TRAVELDURATION, 3, POSITION('H' IN TRAVELDURATION) - 3)) * 3600
+                    WHEN TRAVELDURATION LIKE 'PT%M' THEN 
+                        TRY_TO_NUMBER(SUBSTR(TRAVELDURATION, 3, POSITION('M' IN TRAVELDURATION) - 3)) * 60
+                    ELSE NULL
+                END
+            ) AS avg_travel_duration
         FROM {FULLY_QUALIFIED_TABLE}
         GROUP BY STARTINGAIRPORT, DESTINATIONAIRPORT
         ORDER BY avg_travel_duration DESC
@@ -226,5 +300,15 @@ with tab2:
     """
     travel_durations = run_query(sql)
     if travel_durations is not None:
-        fig = px.bar(travel_durations, x="avg_travel_duration", y="STARTINGAIRPORT", color="DESTINATIONAIRPORT", orientation="h", title="Travel Duration by Route")
+        st.write("Travel Duration DataFrame:")
+        st.dataframe(travel_durations)  # Debugging: Display the DataFrame
+
+        fig = px.bar(
+            travel_durations,
+            x="avg_travel_duration",
+            y="startingairport",
+            color="destinationairport",
+            orientation="h",
+            title="Travel Duration by Route"
+        )
         st.plotly_chart(fig, use_container_width=True)
