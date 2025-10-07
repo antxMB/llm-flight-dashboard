@@ -115,6 +115,8 @@ def run_query(sql):
         return None
 
 # --- Main App Logic ---
+user_query = st.text_input("Enter your query:", "")
+
 if user_query:
     with st.spinner("Generating SQL..."):
         generated_sql = translate_to_sql(user_query)
