@@ -4,6 +4,7 @@ import pandas as pd
 import snowflake.connector
 import snowflake.connector.errors
 import openai
+from openai import OpenAI
 import plotly.express as px
 from dotenv import load_dotenv  # Import dotenv
 
@@ -15,19 +16,83 @@ st.set_page_config(page_title="LLM Flight Dashboard", layout="wide")
 st.title("Flight Data Chat Dashboard")
 
 # --- OpenAI client setup ---
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # --- Connect to Snowflake ---
 @st.cache_resource
 def connect_to_snowflake():
-    return snowflake.connector.connect(
-        user=os.getenv("SNOWFLAKE_USER"),
-        password=os.getenv("SNOWFLAKE_PASSWORD"),
-        account=os.getenv("SNOWFLAKE_ACCOUNT"),
-        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
-        database=os.getenv("SNOWFLAKE_DATABASE"),
-        schema=os.getenv("SNOWFLAKE_SCHEMA")
-    )
+    """Connect to Snowflake using Streamlit secrets."""
+    try:
+        # Check for required configurations
+        required_configs = [
+            "SNOWFLAKE_USER",
+            "SNOWFLAKE_ACCOUNT", 
+            "SNOWFLAKE_WAREHOUSE",
+            "SNOWFLAKE_DATABASE",
+            "SNOWFLAKE_SCHEMA",
+            "SNOWFLAKE_ROLE"
+        ]
+        
+        # Verify all required configs exist
+        missing_configs = [config for config in required_configs if config not in st.secrets]
+        if missing_configs:
+            st.error(f"Missing required configurations: {', '.join(missing_configs)}")
+            return None
+
+        # Try key-pair authentication first
+        if "PRIVATE_KEY" in st.secrets:
+            try:
+                from cryptography.hazmat.primitives import serialization
+                
+                # Load and decode the private key
+                private_key_str = st.secrets["PRIVATE_KEY"]
+                
+                # Clean up the private key string - remove any trailing characters
+                private_key_str = private_key_str.rstrip('%').strip()
+                
+                # Ensure proper newline formatting
+                if "\\n" in private_key_str:
+                    private_key_str = private_key_str.replace("\\n", "\n")
+                
+                # Load the private key
+                private_key = serialization.load_pem_private_key(
+                    private_key_str.encode(), 
+                    password=None
+                )
+                
+                # Connect using key pair auth
+                return snowflake.connector.connect(
+                    user=st.secrets["SNOWFLAKE_USER"],
+                    account=st.secrets["SNOWFLAKE_ACCOUNT"],
+                    private_key=private_key,
+                    warehouse=st.secrets["SNOWFLAKE_WAREHOUSE"],
+                    database=st.secrets["SNOWFLAKE_DATABASE"],
+                    schema=st.secrets["SNOWFLAKE_SCHEMA"],
+                    role=st.secrets["SNOWFLAKE_ROLE"]
+                )
+                
+            except Exception as e:
+                st.error(f"Private key authentication failed: {str(e)}")
+                return None
+        
+        # Fall back to password auth if configured
+        elif "SNOWFLAKE_PASSWORD" in st.secrets:
+            return snowflake.connector.connect(
+                user=st.secrets["SNOWFLAKE_USER"],
+                password=st.secrets["SNOWFLAKE_PASSWORD"],
+                account=st.secrets["SNOWFLAKE_ACCOUNT"],
+                warehouse=st.secrets["SNOWFLAKE_WAREHOUSE"],
+                database=st.secrets["SNOWFLAKE_DATABASE"],
+                schema=st.secrets["SNOWFLAKE_SCHEMA"],
+                role=st.secrets["SNOWFLAKE_ROLE"]
+            )
+        else:
+            st.error("No valid authentication method configured. Please provide either PRIVATE_KEY or SNOWFLAKE_PASSWORD in secrets.")
+            return None
+            
+    except Exception as e:
+        st.error(f"Failed to connect to Snowflake: {str(e)}")
+        return None
 
 conn = connect_to_snowflake()
 
