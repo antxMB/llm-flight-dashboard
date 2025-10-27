@@ -77,11 +77,6 @@ def connect_to_snowflake():
                 # Load and decode the private key - handle different newline formats
                 private_key_str = st.secrets["PRIVATE_KEY"]
                 
-                # Debug: Show first/last few characters of the key (for troubleshooting)
-                st.write(f"🔍 Debug: Private key starts with: {private_key_str[:30]}...")
-                st.write(f"🔍 Debug: Private key ends with: ...{private_key_str[-30:]}")
-                st.write(f"🔍 Debug: Private key length: {len(private_key_str)} characters")
-                
                 # Clean up the private key string
                 # Remove any trailing characters like '%'
                 private_key_str = private_key_str.rstrip('%').strip()
@@ -89,7 +84,6 @@ def connect_to_snowflake():
                 # Ensure proper newline formatting
                 if "\\n" in private_key_str:
                     private_key_str = private_key_str.replace("\\n", "\n")
-                    st.write("🔍 Debug: Converted \\n to actual newlines")
                 
                 # Validate the key format
                 if not private_key_str.startswith("-----BEGIN PRIVATE KEY-----"):
@@ -100,21 +94,17 @@ def connect_to_snowflake():
                     st.error("❌ Private key doesn't end with -----END PRIVATE KEY-----")
                     return None
                 
-                st.write("✅ Private key format validation passed")
-                
                 # Load the private key
                 try:
                     private_key = serialization.load_pem_private_key(
                         private_key_str.encode(), 
                         password=None
                     )
-                    st.write("✅ Private key parsed successfully")
                 except Exception as parse_error:
                     st.error(f"❌ Failed to parse private key: {parse_error}")
                     return None
                 
                 # Connect using key pair auth
-                st.write("🔗 Attempting Snowflake connection with private key...")
                 conn = snowflake.connector.connect(
                     user=st.secrets["SNOWFLAKE_USER"],
                     account=st.secrets["SNOWFLAKE_ACCOUNT"],
@@ -124,7 +114,6 @@ def connect_to_snowflake():
                     schema=st.secrets["SNOWFLAKE_SCHEMA"],
                     role=st.secrets["SNOWFLAKE_ROLE"]
                 )
-                st.success("✅ Connected to Snowflake using private key authentication")
                 return conn
             except snowflake.connector.errors.DatabaseError as db_error:
                 st.error(f"❌ Snowflake database error: {str(db_error)}")
@@ -146,7 +135,6 @@ def connect_to_snowflake():
                 schema=st.secrets["SNOWFLAKE_SCHEMA"],
                 role=st.secrets["SNOWFLAKE_ROLE"]
             )
-            st.success("✅ Connected to Snowflake using password authentication")
             return conn
         else:
             st.error("❌ No valid authentication method configured. Please provide either PRIVATE_KEY or SNOWFLAKE_PASSWORD in secrets.")
