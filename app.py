@@ -289,7 +289,7 @@ def translate_to_sql(prompt):
     "6. Do not reference or JOIN other tables.\n"
     "7. Compare boolean columns using `= TRUE` or `= FALSE`.\n"
     "8. Ignore NULL values unless explicitly mentioned.\n"
-    "9. Avoid interpreting text like 'PT45M' unless asked — default to 'PT(\d+)H'.\n"
+    r"9. Avoid interpreting text like 'PT45M' unless asked — default to 'PT(\d+)H'." + "\n"
     "10. Focus on operational aspects like route load, availability, timing, and delays.\n"
     "11. Use FLIGHTDATE or SEARCHDATE for time-based filtering when prompted.\n"
     "12. Use aliases (`AS`) for computed columns when useful for readability."
@@ -645,10 +645,7 @@ if persona == "Revenue Manager (Strategic)":
         st.markdown("### Detailed Anomaly Analysis")
         styled_df = anomalies_df[['startingairport', 'destinationairport', 
                                  'fare', 'avg_route_fare', 'percent_above_avg', 
-                                 'distance_miles', 'z_score']].style.background_gradient(
-            subset=['percent_above_avg', 'z_score'],
-            cmap='RdYlGn_r'
-        ).format({
+                                 'distance_miles', 'z_score']].style.format({
             'fare': '{:.2f}',
             'avg_route_fare': '{:.2f}',
             'percent_above_avg': '{:.2f}',
@@ -743,10 +740,7 @@ if persona == "Revenue Manager (Strategic)":
         # Display full analysis table
         st.markdown("### Detailed Route Analysis")
         st.dataframe(
-            margin_df.style.background_gradient(
-                subset=['occupancy_percentage', 'margin_percentage'],
-                cmap='RdYlGn'
-            ).format({
+            margin_df.style.format({
         'current_avg_fare': '${:.2f}',
         'margin_percentage': '{:.1f}%',
         'price_trend': '${:.2f}',
@@ -833,10 +827,7 @@ if persona == "Revenue Manager (Strategic)":
         
         summary_df.columns = ['Avg Fare', 'Min Fare', 'Max Fare', 'Std Dev', 'Avg Daily Flights']
         st.dataframe(
-            summary_df.style.background_gradient(
-                subset=['Avg Fare'],
-                cmap='YlOrRd'
-            ),
+            summary_df,
             use_container_width=True
         )
         
@@ -883,12 +874,7 @@ if persona == "Revenue Manager (Strategic)":
     if last_minute_df is not None and not last_minute_df.empty:
         # Display results
         st.dataframe(
-            last_minute_df.style.background_gradient(
-                subset=['average_seat_availability'],
-                cmap='RdYlGn',
-                vmin=1,
-                vmax=10
-            )
+            last_minute_df
         )
     else:
         st.info(f"No routes with available seats found for {flight_end_date}")
@@ -989,11 +975,7 @@ if persona == "Revenue Manager (Strategic)":
         
         # Display detailed analysis
         st.markdown("### Detailed Inconsistency Analysis")
-        styled_df = inconsistency_df.style.background_gradient(
-            subset=['avg_fare', 'avg_seats'],
-            cmap='RdYlGn'
-        )
-        st.dataframe(styled_df)
+        st.dataframe(inconsistency_df)
         
         # Summary statistics
         st.markdown("### Key Findings")
@@ -1089,9 +1071,6 @@ else:  # Ops Controller
         # Display detailed table
         st.markdown("### Detailed Route Analysis")
         st.dataframe(
-            capacity_df.style.background_gradient(
-                subset=['average_seat_availability'],
-                cmap='RdYlGn'
-            ),
+            capacity_df,
             use_container_width=True
         )
