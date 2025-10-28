@@ -181,18 +181,6 @@ with st.sidebar:
     )
     
     st.markdown("---")  # Add separator after role selection
-    
-    # Add reconnect button
-    if st.button("🔌 Reconnect to Snowflake", help="Force a fresh connection to Snowflake if you're experiencing connection issues"):
-        st.cache_resource.clear()
-        st.session_state.snowflake_conn = connect_to_snowflake()
-        if st.session_state.snowflake_conn:
-            st.success("✅ Reconnected successfully!")
-        else:
-            st.error("❌ Reconnection failed")
-        st.rerun()
-    
-    st.markdown("---")  # Add separator
 
     # --- Date Range Filter ---
     flight_start_date = st.sidebar.date_input(
@@ -251,6 +239,16 @@ with st.sidebar:
         # Reset fare range
         st.session_state['fare_range'] = (0, 500)
         # Force a rerun to apply changes
+        st.rerun()
+    
+    # Add reconnect button below Reset All Filters
+    if st.sidebar.button("🔌 Reconnect to Snowflake", key="reconnect_snowflake", help="Force a fresh connection to Snowflake if you're experiencing connection issues"):
+        st.cache_resource.clear()
+        st.session_state.snowflake_conn = connect_to_snowflake()
+        if st.session_state.snowflake_conn:
+            st.success("✅ Reconnected successfully!")
+        else:
+            st.error("❌ Reconnection failed")
         st.rerun()
 
     st.markdown("---")  # Add separator before expandable sections
