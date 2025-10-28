@@ -1037,6 +1037,10 @@ else:  # Ops Controller
                         # Generate insights
                         st.markdown("### 🔍 Query Insights")
                         insights_generator(result_df)
+                    elif result_df is not None and result_df.empty:
+                        st.warning("⚠️ Query executed successfully but returned no results. Try adjusting your query or filters.")
+                    else:
+                        st.error("❌ Query failed to execute. Please check your query and try again.")
 
     # --- 3. Route Capacity Analysis ---
     st.markdown("---")
