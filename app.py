@@ -20,13 +20,23 @@ FULLY_QUALIFIED_TABLE = TABLE_NAME
 def run_query(sql):
     def execute_query(conn):
         try:
+            # Validate connection is still alive
+            if conn is None:
+                return None
+            
+            # Test the connection with a simple query
+            try:
+                conn.cursor().execute("SELECT 1")
+            except:
+                return None  # Connection is dead, trigger reconnect
+            
             df = pd.read_sql(sql, conn)
             df.columns = df.columns.str.lower()
             return df
         except Exception as e:
             error_msg = str(e)
-            if "Authentication token has expired" in error_msg:
-                return None
+            if "Authentication token has expired" in error_msg or "expired" in error_msg.lower():
+                return None  # Trigger reconnection
             elif "Division by zero" in error_msg:
                 st.error("⚠️ Query failed: Cannot divide by zero. Please modify your query.")
             elif "syntax error" in error_msg.lower():
@@ -35,13 +45,14 @@ def run_query(sql):
                 st.error("⚠️ Query failed. Please try a different query.")
             return None
 
-    # First attempt
+    # First attempt with existing connection
     if st.session_state.snowflake_conn is not None:
         result = execute_query(st.session_state.snowflake_conn)
         if result is not None:
             return result
 
-    # If first attempt failed, try reconnecting
+    # If first attempt failed, clear cache and reconnect
+    st.cache_resource.clear()  # Clear the cached connection
     st.session_state.snowflake_conn = connect_to_snowflake()
     if st.session_state.snowflake_conn is not None:
         result = execute_query(st.session_state.snowflake_conn)
@@ -51,7 +62,7 @@ def run_query(sql):
     return None
 
 # --- Connect to Snowflake ---
-@st.cache_resource
+@st.cache_resource(ttl=3600)  # Cache for 1 hour, then reconnect automatically
 def connect_to_snowflake():
     """Connect to Snowflake using Streamlit secrets."""
     try:
@@ -170,6 +181,18 @@ with st.sidebar:
     )
     
     st.markdown("---")  # Add separator after role selection
+    
+    # Add reconnect button
+    if st.button("🔌 Reconnect to Snowflake", help="Force a fresh connection to Snowflake if you're experiencing connection issues"):
+        st.cache_resource.clear()
+        st.session_state.snowflake_conn = connect_to_snowflake()
+        if st.session_state.snowflake_conn:
+            st.success("✅ Reconnected successfully!")
+        else:
+            st.error("❌ Reconnection failed")
+        st.rerun()
+    
+    st.markdown("---")  # Add separator
 
     # --- Date Range Filter ---
     flight_start_date = st.sidebar.date_input(
