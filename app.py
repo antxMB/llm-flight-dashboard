@@ -229,7 +229,7 @@ with st.sidebar:
 
     # --- Add Reset Filters Button ---
     st.sidebar.markdown("---")  # Add separator
-    if st.sidebar.button("🔄 Reset All Filters", key="reset_filters"):  # Added unique key
+    if st.sidebar.button("🔄 Reset All Filters", key="reset_filters", use_container_width=True):  # Added unique key and full width
         # Reset date inputs to default values
         st.session_state['start_date'] = date(2022, 4, 16)
         st.session_state['end_date'] = date(2022, 10, 5)
@@ -242,7 +242,7 @@ with st.sidebar:
         st.rerun()
     
     # Add reconnect button below Reset All Filters
-    if st.sidebar.button("🔌 Reconnect to Snowflake", key="reconnect_snowflake", help="Force a fresh connection to Snowflake if you're experiencing connection issues"):
+    if st.sidebar.button("🔌 Reconnect to Snowflake", key="reconnect_snowflake", help="Force a fresh connection to Snowflake if you're experiencing connection issues", use_container_width=True):
         st.cache_resource.clear()
         st.session_state.snowflake_conn = connect_to_snowflake()
         if st.session_state.snowflake_conn:
